@@ -1,113 +1,133 @@
 import streamlit as st
-import os
-import subprocess
-import sys
-
-# --- 1. CÀI ĐẶT CƯỠNG CHẾ (FORCE INSTALL) ---
-# Đoạn này sẽ chạy ngay khi app khởi động để ép cài bản mới nhất
-try:
-    import google.generativeai as genai
-    # Kiểm tra xem có phải bản cũ không, nếu cũ quá thì cài lại
-    version = genai.__version__
-    if version < "0.8.3":
-        st.warning(f"⚠️ Phát hiện bản cũ ({version}). Đang tự động nâng cấp...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
-        import google.generativeai as genai # Import lại
-        st.success("✅ Đã nâng cấp xong! Vui lòng bấm Rerun nếu cần.")
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai"])
-    import google.generativeai as genai
-
+import google.generativeai as genai
 from PIL import Image
 import io
 
-# --- 2. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="TITAN GENESIS", page_icon="🌌", layout="wide")
+# ==========================================
+# 1. CẤU HÌNH TRANG & GIAO DIỆN
+# ==========================================
+st.set_page_config(
+    page_title="TITAN VISION ENGINE v4.0",
+    page_icon="👁️",
+    layout="wide"
+)
 
+# Custom CSS cho đẹp trai
 st.markdown("""
 <style>
-    .stButton>button {background-color: #FF4B4B; color: white;}
-    .reportview-container {background: #0E1117;}
+    .stButton>button {
+        width: 100%;
+        background-color: #FF4B4B;
+        color: white;
+        height: 3em;
+        font-weight: bold;
+    }
+    .reportview-container {
+        background: #0E1117;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ ---
+st.title("👁️ TITAN VISION ENGINE v4.0")
+st.caption("Từ Ý tưởng đến Đế chế - Powered by Gemini 1.5 Flash")
+
+# ==========================================
+# 2. CẤU HÌNH API & SIDEBAR
+# ==========================================
 with st.sidebar:
-    st.title("🌌 TITAN CONTROL")
-    # Hiển thị phiên bản để kiểm tra
-    try:
-        st.caption(f"Engine Version: {genai.__version__}")
-    except:
-        st.caption("Engine: Updating...")
-        
-    api_key = st.text_input("🔑 Google API Key", type="password", placeholder="AIza...")
+    st.header("⚙️ Cấu hình")
+    # Lấy API Key từ Secrets hoặc nhập tay
+    if 'GOOGLE_API_KEY' in st.secrets:
+        api_key = st.secrets['GOOGLE_API_KEY']
+        st.success("✅ Đã nạp API Key từ hệ thống")
+    else:
+        api_key = st.text_input("🔑 Nhập Google API Key", type="password")
+        st.info("💡 Mẹo: Cài đặt API Key trong Streamlit Secrets để không phải nhập lại.")
+    
+    mode = st.radio(
+        "Chế độ vận hành:",
+        ["Auto-Router (Tự động)", "Vision Analysis (Phân tích ảnh)", "Code Audit (Soi code)"]
+    )
     
     st.markdown("---")
-    st.subheader("🧠 Chế độ")
-    mode = st.radio("Chọn vai trò:", ["Free Chat", "Code Audit", "Creative"])
+    st.markdown("### 📝 Hướng dẫn")
+    st.markdown("1. Nhập Text hoặc Tải ảnh lên.")
+    st.markdown("2. Bấm **KÍCH HOẠT TITAN**.")
+    st.markdown("3. Tải kết quả về máy.")
 
-    st.markdown("---")
-    rag_files = st.file_uploader("📚 Nạp Tài Liệu (RAG)", accept_multiple_files=True)
+# ==========================================
+# 3. BỘ NÃO TITAN (SYSTEM INSTRUCTION)
+# ==========================================
+TITAN_SYSTEM_INSTRUCTION = """
+ROLE: Bạn là TITAN - Hệ thống tinh chế Đa phương thức (Multimodal Refinery).
+MISSION: Phân tích Input (Văn bản hoặc Hình ảnh) và đưa ra giải pháp tối ưu nhất.
 
-def call_titan(api_key, text, img, rag_context, mode):
-    if not api_key: return "⚠️ Chưa nhập API Key!"
-    
-    try:
-        genai.configure(api_key=api_key)
-        
-        # System Prompt
-        sys_msg = "Bạn là TITAN - Trợ lý AI đa năng."
-        if mode == "Code Audit": sys_msg += " Hãy soi lỗi code kỹ lưỡng."
-        
-        # Model config
-        # Dùng model Flash 1.5 mới nhất
-        model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=sys_msg)
-        
-        # Ghép nội dung
-        content = []
-        full_text = f"CHẾ ĐỘ: {mode}\n"
-        if rag_context: full_text += f"TÀI LIỆU THAM KHẢO:\n{rag_context}\n\n"
-        full_text += f"USER HỎI:\n{text}"
-        
-        content.append(full_text)
-        if img: content.append(img)
-        
-        response = model.generate_content(content)
-        return response.text
+OUTPUT FORMAT (MARKDOWN):
+---
+## 🎯 THE VERDICT
+- **One-Liner:** [Nhận xét sắc bén]
 
-    except Exception as e:
-        return f"🔥 LỖI: {str(e)}"
+## 🛠️ DEEP DIVE
+- **Analysis:** [Phân tích chi tiết]
 
-# --- 4. GIAO DIỆN CHÍNH ---
-st.title("🌌 TITAN GENESIS ENGINE")
+## 🚀 ACTION PLAN
+- **Step 1:** [Làm gì?]
 
+## 💎 THE REFINED ARTIFACT
+(Code sửa lỗi hoặc Prompt, nội dung đã tối ưu)
+""" 
+
+# ==========================================
+# 4. GIAO DIỆN CHÍNH
+# ==========================================
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("📥 Input")
-    user_input = st.text_area("Nhập nội dung...", height=200)
-    user_img = st.file_uploader("🖼️ Thêm ảnh", type=['png', 'jpg', 'jpeg'])
+    st.subheader("📥 Input Data")
+    input_text = st.text_area("Mô tả ý tưởng / Paste Code / Câu hỏi:", height=200, placeholder="Ví dụ: Phân tích giao diện này và viết lại code HTML...")
+    uploaded_file = st.file_uploader("Tải ảnh lên (Optional)", type=["jpg", "png", "jpeg"])
     
-    if st.button("✨ KÍCH HOẠT TITAN", type="primary", use_container_width=True):
-        if not user_input and not user_img:
-            st.warning("Nhập gì đó đi chứ!")
-        else:
-            with st.spinner("Đang xử lý..."):
-                # Xử lý RAG
-                rag_data = ""
-                if rag_files:
-                    for f in rag_files:
-                        try: rag_data += f.getvalue().decode("utf-8") + "\n"
-                        except: pass
-                
-                # Xử lý Ảnh
-                img_obj = Image.open(user_img) if user_img else None
-                
-                # Gọi AI
-                result = call_titan(api_key, user_input, img_obj, rag_data, mode)
-                st.session_state['result'] = result
+    image_data = None
+    if uploaded_file is not None:
+        image_data = Image.open(uploaded_file)
+        st.image(image_data, caption="Ảnh đã tải lên", use_container_width=True)
+
+    btn_submit = st.button("✨ KÍCH HOẠT TITAN")
 
 with col2:
-    st.subheader("📤 Output")
-    if 'result' in st.session_state:
-        st.markdown(st.session_state['result'])
+    st.subheader("💎 Titan Output")
+    output_placeholder = st.empty()
+
+    if btn_submit:
+        if not api_key:
+            st.error("⚠️ Vui lòng nhập API Key!")
+        else:
+            try:
+                with st.spinner("📡 TITAN đang quét dữ liệu..."):
+                    # Cấu hình Gemini
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=TITAN_SYSTEM_INSTRUCTION)
+                    
+                    # Chuẩn bị input
+                    prompt_parts = [f"CHẾ ĐỘ: {mode}\n\nINPUT USER:\n{input_text}"]
+                    if image_data:
+                        prompt_parts.append(image_data)
+                        prompt_parts[0] += "\n\n(CÓ ẢNH ĐÍNH KÈM)"
+                    
+                    # Gọi API
+                    response = model.generate_content(prompt_parts)
+                    result_text = response.text
+                    
+                    # Hiển thị kết quả
+                    output_placeholder.markdown(result_text)
+                    
+                    # Tạo nút tải xuống
+                    st.download_button(
+                        label="💾 Tải báo cáo (.md)",
+                        data=result_text,
+                        file_name="Titan_Report.md",
+                        mime="text/markdown"
+                    )
+
+            except Exception as e:
+                st.error(f"🔥 LỖI HỆ THỐNG: {str(e)}")
