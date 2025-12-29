@@ -106,7 +106,7 @@ with col2:
                 with st.spinner("📡 TITAN đang quét dữ liệu..."):
                     # Cấu hình Gemini
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=TITAN_SYSTEM_INSTRUCTION)
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=TITAN_SYSTEM_INSTRUCTION)
                     
                     # Chuẩn bị input
                     prompt_parts = [f"CHẾ ĐỘ: {mode}\n\nINPUT USER:\n{input_text}"]
