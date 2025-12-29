@@ -34,3 +34,11 @@ if btn_submit:
 
             except Exception as e:
                 st.error(f"🔥 LỖI HỆ THỐNG: {str(e)}")
+# Thêm vào trong with st.sidebar:
+if st.button("🔍 Kiểm tra Model khả dụng"):
+    try:
+        genai.configure(api_key=api_key)
+        models = [m.name for m in genai.list_models()]
+        st.write(models)
+    except Exception as e:
+        st.error(f"Lỗi check model: {e}")
