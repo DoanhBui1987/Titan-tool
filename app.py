@@ -25,7 +25,6 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("📚 Nạp Kiến Thức (RAG Lite)")
-    st.info("Tải file tài liệu lên để TITAN học.")
     rag_files = st.file_uploader("Upload PDF/TXT/MD", accept_multiple_files=True)
 
 # --- RAG LOGIC ---
@@ -37,10 +36,10 @@ def process_rag(files):
                 stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
                 context += f"\n--- TÀI LIỆU: {uploaded_file.name} ---\n{stringio.read()}\n"
             except:
-                context += f"\n(Không đọc được file {uploaded_file.name} do sai định dạng)\n"
+                pass
     return context
 
-# --- GEMINI LOGIC ---
+# --- GEMINI LOGIC (AUTO-SWITCH MODEL) ---
 TITAN_INSTRUCTION = """
 ROLE: Bạn là TITAN - Hệ thống tinh chế Đa phương thức.
 MISSION: Xử lý Input dựa trên Context (nếu có) và yêu cầu người dùng.
@@ -56,33 +55,51 @@ def call_titan(api_key, text, img, rag_context, mode):
         if mode == "Code Audit": system_msg += "\nFOCUS: Tìm lỗi, tối ưu code, bảo mật."
         if mode == "Creative": system_msg += "\nFOCUS: Viết nội dung thu hút, viral, marketing."
         
-        model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=system_msg)
+        # --- CƠ CHẾ TỰ ĐỘNG THỬ MODEL ---
+        # Thử lần lượt: 1.5 Flash -> 1.5 Pro -> Pro (Cũ)
+        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
         
+        response_text = ""
+        used_model = ""
+        error_log = ""
+
+        # Ghép prompt
         prompt_parts = []
         full_text = f"CHẾ ĐỘ: {mode}\n\n"
-        
-        if rag_context:
-            full_text += f"CONTEXT (THÔNG TIN TỪ FILE):\\n{rag_context}\n\n"
-            
+        if rag_context: full_text += f"CONTEXT:\n{rag_context}\n\n"
         full_text += f"YÊU CẦU CỦA USER:\n{text}"
         prompt_parts.append(full_text)
-        
         if img: prompt_parts.append(img)
+
+        # Vòng lặp thử model
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name, system_instruction=system_msg)
+                response = model.generate_content(prompt_parts)
+                response_text = response.text
+                used_model = model_name
+                break # Thành công thì thoát ngay
+            except Exception as e:
+                error_log += f"- {model_name}: {str(e)}\n"
+                continue
         
-        response = model.generate_content(prompt_parts)
-        return response.text
-    except Exception as e: return f"🔥 LỖI: {str(e)}"
+        if response_text:
+            return f"✅ **Đã xử lý bằng model: {used_model}**\n\n" + response_text
+        else:
+            return f"🔥 TẤT CẢ MODEL ĐỀU LỖI. CHI TIẾT:\n{error_log}"
+
+    except Exception as e: return f"🔥 LỖI HỆ THỐNG: {str(e)}"
 
 # --- UI CHÍNH ---
 st.title("🌌 TITAN GENESIS ENGINE")
-st.caption("Powered by Gemini 1.5 Flash • Cloud Edition")
+st.caption("Powered by Gemini 1.5 Flash • Auto-Fix Edition")
 
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("📥 Input")
     user_input = st.text_area("Nhập nội dung...", height=200)
-    user_img = st.file_uploader("🖼️ Thêm ảnh (Vision)", type=['png', 'jpg', 'jpeg'])
+    user_img = st.file_uploader("🖼️ Thêm ảnh", type=['png', 'jpg', 'jpeg'])
     
     img_data = None
     if user_img:
