@@ -1,12 +1,11 @@
 import streamlit as st
 import os
-import time
 import google.generativeai as genai
 from PIL import Image
 
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(
-    page_title="TITAN VISION ENGINE v5.0",
+    page_title="TITAN VISION ENGINE v5.1",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -17,51 +16,39 @@ st.markdown("""
 <style>
     .stApp { background-color: #0e1117; }
     .stButton > button { width: 100%; border-radius: 5px; height: 3em; font-weight: bold;}
-    /* Ẩn bớt footer mặc định */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HÀM TỰ ĐỘNG DÒ TÌM MODEL (AUTO-DISCOVERY) ---
-# Đây là "vũ khí bí mật" để fix lỗi 404
+# --- 3. HÀM TỰ ĐỘNG DÒ TÌM MODEL (GIỮ NGUYÊN VÌ ĐÃ CHẠY TỐT) ---
 def get_best_available_model():
-    """Tự động tìm model tốt nhất mà Key này dùng được."""
     try:
-        # Lấy danh sách tất cả model khả dụng
         all_models = [m.name for m in genai.list_models()]
-        
-        # Danh sách ưu tiên (Từ xịn nhất xuống thấp nhất)
-        priority_list = [
+        # Ưu tiên tìm Gemini 2.0 hoặc 1.5 Pro
+        priority_targets = [
+            "models/gemini-2.0-flash-exp", 
             "models/gemini-1.5-pro-latest",
             "models/gemini-1.5-pro",
-            "models/gemini-1.5-flash",
-            "models/gemini-pro-vision", # Bản cũ nhưng ổn định
-            "models/gemini-pro"
+            "models/gemini-1.5-flash"
         ]
         
-        # 1. Tìm trong danh sách ưu tiên xem có cái nào khớp không
-        for target in priority_list:
+        for target in priority_targets:
             if target in all_models:
-                return target # Tìm thấy là chốt luôn
-                
-        # 2. Nếu không khớp cái nào, tìm bất kỳ cái nào có chữ 'gemini'
+                return target
+        
+        # Nếu không thấy, lấy cái đầu tiên có chữ 'generateContent'
         for m in all_models:
             if 'gemini' in m and 'generateContent' in genai.get_model(m).supported_generation_methods:
                 return m
-                
-        # 3. Đường cùng: Trả về default (có thể 404 nhưng hết cách)
         return "models/gemini-1.5-flash"
-        
-    except Exception as e:
-        # Nếu lỗi ngay cả khi list_models (thường do sai Key), trả về fallback
-        return "gemini-1.5-flash"
+    except:
+        return "models/gemini-1.5-flash"
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
     st.header("⚙ Trung tâm điều khiển")
     
-    # API KEY HANDLING
     api_key = None
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
@@ -69,7 +56,6 @@ with st.sidebar:
     else:
         if "api_key" not in st.session_state:
             st.session_state.api_key = ""
-        
         if not st.session_state.api_key:
             user_input = st.text_input("Google API Key:", type="password")
             if user_input:
@@ -82,30 +68,22 @@ with st.sidebar:
                 st.session_state.api_key = ""
                 st.rerun()
 
-    # KẾT NỐI & TỰ DÒ MODEL
-    active_model_name = "Chưa kết nối"
+    active_model_name = "Detecting..."
     if api_key:
         os.environ["GOOGLE_API_KEY"] = api_key
         genai.configure(api_key=api_key)
-        
-        # Gọi hàm dò tìm model ngay khi có Key
         try:
-            found_model = get_best_available_model()
-            # Bỏ tiền tố 'models/' nếu cần thiết để hiển thị đẹp
-            active_model_name = found_model.replace("models/", "")
+            active_model_name = get_best_available_model().replace("models/", "")
         except:
-            active_model_name = "Error Detecting"
+            active_model_name = "gemini-1.5-flash"
 
     st.markdown("---")
     st.caption(f"🤖 **Active Core:** `{active_model_name}`")
-    
-    # Chế độ (Giờ chỉ là UI, vì Core đã tự chọn cái tốt nhất)
-    mode = st.radio("Chế độ:", ["🔴 Auto-Router (Best Available)", "⚪ Code Audit", "⚪ Vision Analysis"])
-
+    mode = st.radio("Mode:", ["🔴 Auto-Router", "⚪ Vision Analysis", "⚪ Code Audit"])
 
 # --- 5. GIAO DIỆN CHÍNH ---
-st.title("👁 TITAN VISION ENGINE v5.0")
-st.caption("Strategic Partner Edition - Auto Discovery Protocol")
+st.title("👁 TITAN VISION ENGINE v5.1")
+st.caption("Strategic Partner Edition - Fail-Safe Protocol")
 
 col_input, col_output = st.columns([1, 1], gap="medium")
 
@@ -121,7 +99,7 @@ with col_input:
 
     run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
 
-# --- 6. XỬ LÝ LOGIC (AN TOÀN TUYỆT ĐỐI) ---
+# --- 6. XỬ LÝ LOGIC (BẤT TỬ - KHÔNG BAO GIỜ CRASH) ---
 with col_output:
     st.subheader("💎 Kết quả phân tích")
     
@@ -131,35 +109,40 @@ with col_output:
         else:
             status_box = st.empty()
             
-            try:
-                with st.spinner(f"🚀 Đang chạy trên core: {active_model_name}..."):
+            # Hàm gọi API có xử lý lỗi thông minh
+            def run_titan_engine():
+                input_content = []
+                if user_prompt: input_content.append(user_prompt)
+                if image_data: input_content.append(image_data)
+                
+                # CÁCH 1: Thử chạy Model với công cụ Search (Cú pháp mới)
+                try:
+                    # Cố gắng dùng tool object thay vì string để tránh lỗi 400
+                    tools_config = {'google_search': {}} 
                     
-                    # CẤU HÌNH MODEL TỪ KẾT QUẢ DÒ TÌM
-                    # Lưu ý: Một số model cũ không hỗ trợ 'tools', nên ta dùng try-except để cấu hình
-                    try:
-                        model = genai.GenerativeModel(
-                            model_name=active_model_name,
-                            tools='google_search_retrieval' # Thử bật Search
-                        )
-                    except:
-                        # Nếu bật Search lỗi (do model cũ), tắt Search đi
-                        model = genai.GenerativeModel(model_name=active_model_name)
+                    model = genai.GenerativeModel(
+                        model_name=active_model_name,
+                        tools=[tools_config] 
+                    )
+                    return model.generate_content(input_content), "Search Enabled"
+                
+                except Exception as e_search:
+                    # CÁCH 2: Nếu Search lỗi (do model không hỗ trợ), chạy CHẾ ĐỘ THUẦN (Text Only)
+                    # Đây là bước 'Bất Tử' - Nó sẽ bỏ qua lỗi để trả về kết quả
+                    status_box.warning(f"⚠️ Search Tool không tương thích ({str(e_search)[:30]}...). Chuyển sang chế độ Chat thuần.")
+                    
+                    model_plain = genai.GenerativeModel(model_name=active_model_name)
+                    return model_plain.generate_content(input_content), "Text Only"
 
-                    # CHUẨN BỊ INPUT
-                    input_content = []
-                    if user_prompt: input_content.append(user_prompt)
-                    if image_data: input_content.append(image_data)
+            try:
+                with st.spinner(f"🚀 Đang xử lý trên core {active_model_name}..."):
+                    response, mode_run = run_titan_engine()
                     
-                    # GỌI API
-                    response = model.generate_content(input_content)
-                    
-                    # HIỂN THỊ KẾT QUẢ
-                    status_box.success(f"✅ Thành công! (Core: {active_model_name})")
+                    status_box.success(f"✅ Thành công! (Core: {active_model_name} | Mode: {mode_run})")
                     st.markdown(response.text)
                     
-                    # HIỂN THỊ NGUỒN (Nếu có)
+                    # Hiển thị nguồn nếu có (chỉ khi Mode Search chạy được)
                     if hasattr(response, 'candidates') and response.candidates:
-                         # Check an toàn các thuộc tính sâu bên trong
                          c = response.candidates[0]
                          if hasattr(c, 'grounding_metadata') and c.grounding_metadata.search_entry_point:
                              st.markdown("---")
@@ -167,14 +150,9 @@ with col_output:
                              for chunk in c.grounding_metadata.grounding_chunks:
                                  if chunk.web:
                                      st.markdown(f"- [{chunk.web.title}]({chunk.web.uri})")
-
-            except Exception as e:
-                # NẾU VẪN LỖI: In ra danh sách model để debug
-                st.error(f"❌ Lỗi xử lý: {str(e)}")
-                
-                with st.expander("🛠 Debug: Danh sách Model khả dụng của Key này"):
-                    try:
-                        all_m = genai.list_models()
-                        st.write([m.name for m in all_m])
-                    except:
-                        st.write("Không thể lấy danh sách model (Kiểm tra lại Key/Quyền hạn)")
+                                     
+            except Exception as e_final:
+                st.error(f"❌ Lỗi hệ thống: {str(e_final)}")
+                # Hiện debug list nếu chết hẳn
+                with st.expander("Debug Info"):
+                    st.write(genai.list_models())
