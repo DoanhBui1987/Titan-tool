@@ -1,158 +1,151 @@
-import streamlit as st
+# @title 🚀 TITAN VISION ENGINE v5.2 (Clean & Safe Version)
 import os
+import urllib.request
+
+# 1. CÀI ĐẶT MÔI TRƯỜNG
+# ==========================================================
+print("⏳ Đang thiết lập hệ thống... (Vui lòng chờ 30s)")
+os.system("pip install -q streamlit google-generativeai pillow localtunnel")
+
+# 2. VIẾT CODE ỨNG DỤNG (app.py)
+# ==========================================================
+app_code = """
+import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import time
 
-# --- 1. CẤU HÌNH TRANG ---
+# --- CẤU HÌNH TRANG ---
 st.set_page_config(
-    page_title="TITAN VISION ENGINE v5.1",
+    page_title="TITAN VISION v5.2",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS DARK MODE & FIX UI ---
-st.markdown("""
+# --- CSS TỐI ƯU ---
+st.markdown(\"\"\"
 <style>
-    .stApp { background-color: #0e1117; }
-    .stButton > button { width: 100%; border-radius: 5px; height: 3em; font-weight: bold;}
+    .stButton>button {
+        background: linear-gradient(90deg, #FF4B4B 0%, #FF9068 100%);
+        color: white;
+        font-weight: bold;
+        border: none;
+        height: 3rem;
+    }
+    .stTextArea textarea {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
+    /* Ẩn bớt footer mặc định */
+    header {visibility: hidden;}
     #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
 </style>
-""", unsafe_allow_html=True)
+\"\"\", unsafe_allow_html=True)
 
-# --- 3. HÀM TỰ ĐỘNG DÒ TÌM MODEL (GIỮ NGUYÊN VÌ ĐÃ CHẠY TỐT) ---
-def get_best_available_model():
-    try:
-        all_models = [m.name for m in genai.list_models()]
-        # Ưu tiên tìm Gemini 2.0 hoặc 1.5 Pro
-        priority_targets = [
-            "models/gemini-2.0-flash-exp", 
-            "models/gemini-1.5-pro-latest",
-            "models/gemini-1.5-pro",
-            "models/gemini-1.5-flash"
-        ]
-        
-        for target in priority_targets:
-            if target in all_models:
-                return target
-        
-        # Nếu không thấy, lấy cái đầu tiên có chữ 'generateContent'
-        for m in all_models:
-            if 'gemini' in m and 'generateContent' in genai.get_model(m).supported_generation_methods:
-                return m
-        return "models/gemini-1.5-flash"
-    except:
-        return "models/gemini-1.5-flash"
-
-# --- 4. SIDEBAR ---
+# --- SIDEBAR (CÀI ĐẶT) ---
 with st.sidebar:
-    st.header("⚙ Trung tâm điều khiển")
+    st.title("⚙️ CẤU HÌNH TITAN")
     
-    api_key = None
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        st.success("🟢 Key: Secured")
-    else:
-        if "api_key" not in st.session_state:
-            st.session_state.api_key = ""
-        if not st.session_state.api_key:
-            user_input = st.text_input("Google API Key:", type="password")
-            if user_input:
-                st.session_state.api_key = user_input
-                st.rerun()
-        else:
-            api_key = st.session_state.api_key
-            st.info("🟢 Key: Ready")
-            if st.button("🔄 Reset Key"):
-                st.session_state.api_key = ""
-                st.rerun()
+    api_key = st.text_input("🔑 Nhập Google API Key", type="password", placeholder="Dán Key mới vào đây...")
+    st.caption("[👉 Lấy Key mới tại đây nếu bị lỗi Quota](https://aistudio.google.com/app/apikey)")
+    
+    st.divider()
+    
+    mode = st.selectbox(
+        "Chế độ hoạt động:",
+        ["Phân tích Hình ảnh (Vision)", "Review Code & Lỗi", "Sáng tạo Nội dung", "Chat Tự do"]
+    )
+    
+    st.info("💡 Mẹo: Phiên bản v5.2 đã loại bỏ các tác vụ ngầm để tiết kiệm Quota cho bạn.")
 
-    active_model_name = "Detecting..."
-    if api_key:
-        os.environ["GOOGLE_API_KEY"] = api_key
-        genai.configure(api_key=api_key)
-        try:
-            active_model_name = get_best_available_model().replace("models/", "")
-        except:
-            active_model_name = "gemini-1.5-flash"
+# --- HÀM XỬ LÝ GEMINI ---
+def call_gemini(api_key, prompt, image=None):
+    # Cấu hình
+    genai.configure(api_key=api_key)
+    
+    # Model Flash: Nhanh - Rẻ - Ổn định
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # Tạo nội dung gửi đi
+    contents = []
+    if image:
+        contents.append(image)
+        prompt = f"[YÊU CẦU XỬ LÝ ẢNH]\\n{prompt}"
+    
+    contents.append(prompt)
+    
+    # Gọi API
+    response = model.generate_content(contents)
+    return response.text
 
-    st.markdown("---")
-    st.caption(f"🤖 **Active Core:** `{active_model_name}`")
-    mode = st.radio("Mode:", ["🔴 Auto-Router", "⚪ Vision Analysis", "⚪ Code Audit"])
+# --- GIAO DIỆN CHÍNH ---
+st.title("👁️ TITAN VISION ENGINE v5.2")
+st.caption("🚀 Phiên bản tối ưu: Tiết kiệm API - Giao diện sạch")
 
-# --- 5. GIAO DIỆN CHÍNH ---
-st.title("👁 TITAN VISION ENGINE v5.1")
-st.caption("Strategic Partner Edition - Fail-Safe Protocol")
+col1, col2 = st.columns([1, 1])
 
-col_input, col_output = st.columns([1, 1], gap="medium")
-
-with col_input:
+# CỘT TRÁI: INPUT
+with col1:
     st.subheader("📥 Dữ liệu đầu vào")
-    user_prompt = st.text_area("Nhập Prompt / Câu hỏi:", height=200)
-    uploaded_file = st.file_uploader("Tải ảnh (nếu có):", type=["jpg", "png", "jpeg"])
+    user_prompt = st.text_area("Nhập yêu cầu của bạn:", height=180, placeholder="Ví dụ: Phân tích bức ảnh này, hoặc sửa đoạn code này...")
     
+    uploaded_file = st.file_uploader("Tải ảnh lên (Nếu cần)", type=["jpg", "png", "jpeg", "webp"])
     image_data = None
     if uploaded_file:
         image_data = Image.open(uploaded_file)
-        st.image(image_data, caption="Preview", use_column_width=True)
+        st.image(image_data, caption="Ảnh Preview", use_container_width=True)
 
-    run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
+    # Nút bấm kích hoạt (QUAN TRỌNG: Chỉ chạy khi bấm nút này)
+    run_btn = st.button("✨ KÍCH HOẠT TITAN NGAY", type="primary", use_container_width=True)
 
-# --- 6. XỬ LÝ LOGIC (BẤT TỬ - KHÔNG BAO GIỜ CRASH) ---
-with col_output:
+# CỘT PHẢI: OUTPUT
+with col2:
     st.subheader("💎 Kết quả phân tích")
     
     if run_btn:
         if not api_key:
-            st.error("⛔ Vui lòng nhập API Key!")
+            st.warning("⚠️ Vui lòng nhập API Key ở cột bên trái trước!")
+        elif not user_prompt and not image_data:
+            st.warning("⚠️ Hãy nhập nội dung hoặc tải ảnh lên!")
         else:
             status_box = st.empty()
-            
-            # Hàm gọi API có xử lý lỗi thông minh
-            def run_titan_engine():
-                input_content = []
-                if user_prompt: input_content.append(user_prompt)
-                if image_data: input_content.append(image_data)
-                
-                # CÁCH 1: Thử chạy Model với công cụ Search (Cú pháp mới)
-                try:
-                    # Cố gắng dùng tool object thay vì string để tránh lỗi 400
-                    tools_config = {'google_search': {}} 
-                    
-                    model = genai.GenerativeModel(
-                        model_name=active_model_name,
-                        tools=[tools_config] 
-                    )
-                    return model.generate_content(input_content), "Search Enabled"
-                
-                except Exception as e_search:
-                    # CÁCH 2: Nếu Search lỗi (do model không hỗ trợ), chạy CHẾ ĐỘ THUẦN (Text Only)
-                    # Đây là bước 'Bất Tử' - Nó sẽ bỏ qua lỗi để trả về kết quả
-                    status_box.warning(f"⚠️ Search Tool không tương thích ({str(e_search)[:30]}...). Chuyển sang chế độ Chat thuần.")
-                    
-                    model_plain = genai.GenerativeModel(model_name=active_model_name)
-                    return model_plain.generate_content(input_content), "Text Only"
-
             try:
-                with st.spinner(f"🚀 Đang xử lý trên core {active_model_name}..."):
-                    response, mode_run = run_titan_engine()
-                    
-                    status_box.success(f"✅ Thành công! (Core: {active_model_name} | Mode: {mode_run})")
-                    st.markdown(response.text)
-                    
-                    # Hiển thị nguồn nếu có (chỉ khi Mode Search chạy được)
-                    if hasattr(response, 'candidates') and response.candidates:
-                         c = response.candidates[0]
-                         if hasattr(c, 'grounding_metadata') and c.grounding_metadata.search_entry_point:
-                             st.markdown("---")
-                             st.caption("🌐 Nguồn dữ liệu:")
-                             for chunk in c.grounding_metadata.grounding_chunks:
-                                 if chunk.web:
-                                     st.markdown(f"- [{chunk.web.title}]({chunk.web.uri})")
-                                     
-            except Exception as e_final:
-                st.error(f"❌ Lỗi hệ thống: {str(e_final)}")
-                # Hiện debug list nếu chết hẳn
-                with st.expander("Debug Info"):
-                    st.write(genai.list_models())
+                status_box.info("📡 Đang kết nối vệ tinh Gemini...")
+                
+                # Gọi hàm xử lý
+                result = call_gemini(api_key, user_prompt, image_data)
+                
+                status_box.success("✅ Hoàn tất!")
+                st.markdown(result)
+                
+                # Nút tải về
+                st.download_button("💾 Lưu kết quả (.md)", result, file_name="titan_result.md")
+                
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg or "Quota" in err_msg:
+                    status_box.error("🛑 LỖI HẾT TIỀN (QUOTA EXCEEDED)!")
+                    st.error("API Key này đã hết hạn mức trong ngày. Vui lòng tạo Key mới từ một tài khoản Google khác và thử lại.")
+                else:
+                    status_box.error(f"🔥 Lỗi kỹ thuật: {err_msg}")
+
+"""
+
+# Ghi file
+with open("app.py", "w", encoding="utf-8") as f:
+    f.write(app_code)
+
+# 3. KHỞI CHẠY SERVER & LẤY PASSWORD
+# ==========================================================
+print("--------------------------------------------------")
+try:
+    ipv4 = urllib.request.urlopen('https://ipv4.icanhazip.com').read().decode('utf8').strip("\n")
+    print(f"🔐 PASSWORD CỦA BẠN:  {ipv4}")
+    print("👉 Hãy Copy số IP trên, bấm vào link bên dưới và Paste vào ô 'Tunnel Password'")
+except:
+    print("⚠️ Không lấy được IP tự động. Hãy tra Google 'What is my IP' để lấy IP public của Colab.")
+print("--------------------------------------------------")
+
+# Chạy ngầm
+!streamlit run app.py &>/content
