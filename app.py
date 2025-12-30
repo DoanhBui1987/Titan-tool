@@ -55,26 +55,26 @@ with st.sidebar:
 
 # --- 3. LOGIC CHỌN MODEL THÔNG MINH ---
 def get_best_model(models_list):
-    """Chọn model tốt nhất dựa trên danh sách thực tế có sẵn"""
+    """Chọn model tốt nhất dựa trên danh sách thực tế (Cập nhật T12/2025)"""
     try:
-        # Ưu tiên số 1: Thế hệ mới nhất Gemini 3 Flash (Nhanh & Mạnh nhất)
+        # Ưu tiên số 1: Gemini 3 Flash (Hàng mới về - Siêu nhanh)
         if 'models/gemini-3-flash-preview' in models_list:
             return genai.GenerativeModel('gemini-3-flash-preview')
 
-        # Ưu tiên số 2: Thế hệ Gemini 2.5 Flash (Ổn định & Hiệu năng cao)
+        # Ưu tiên số 2: Gemini 2.5 Flash (Bản ổn định nhất hiện nay)
         elif 'models/gemini-2.5-flash' in models_list:
             return genai.GenerativeModel('gemini-2.5-flash')
 
-        # Ưu tiên số 3: Thế hệ Gemini 2.5 Pro (Mạnh mẽ toàn diện)
+        # Ưu tiên số 3: Gemini 2.5 Pro (Dành cho task khó)
         elif 'models/gemini-2.5-pro' in models_list:
             return genai.GenerativeModel('gemini-2.5-pro')
             
-        # Fallback: Nếu không có các bản trên, thử tìm bản Flash mới nhất bất kỳ
+        # Fallback: Tìm bất kỳ model nào có chữ 'flash' trong tên
         else:
-            flash_models = [m for m in models_list if 'flash' in m and 'latest' in m]
+            flash_models = [m for m in models_list if 'flash' in m]
             if flash_models:
                 return genai.GenerativeModel(flash_models[0])
-            # Đường cùng: Chọn model đầu tiên trong danh sách
+            # Đường cùng: Chọn đại model đầu tiên
             elif models_list:
                  return genai.GenerativeModel(models_list[0])
             else:
