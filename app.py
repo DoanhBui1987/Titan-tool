@@ -5,129 +5,265 @@ import base64
 from PIL import Image
 import io
 
-# CẤU HÌNH TRANG
-st.set_page_config(page_title="TITAN VISION FINAL", page_icon="👁️", layout="wide")
+# ==============================================================================
+# MODULE 1: CẤU HÌNH & GIAO DIỆN HỆ THỐNG
+# ==============================================================================
+st.set_page_config(
+    page_title="TITAN VISION X (Final Stable)",
+    page_icon="🧿",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# Custom CSS cho giao diện chuyên nghiệp hơn
 st.markdown("""
 <style>
-    .stButton>button {background: #2E7D32; color: white; height: 3em; font-weight: bold;}
+    .stButton>button {
+        background: linear-gradient(90deg, #4b6cb7 0%, #182848 100%);
+        color: white;
+        border: none;
+        height: 3.5em;
+        font-weight: bold;
+        border-radius: 8px;
+        font-size: 16px;
+    }
+    .stButton>button:hover {
+        opacity: 0.9;
+        transform: scale(1.01);
+    }
+    .stTextArea textarea {
+        background-color: #f0f2f6;
+        color: #000;
+        border-radius: 8px;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa;
+    }
+    h1, h2, h3 { color: #182848; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("👁️ TITAN VISION: DIRECT CORE")
-st.caption("Phiên bản chạy trực tiếp qua REST API (Đã sửa lỗi gửi ảnh)")
+# ==============================================================================
+# MODULE 2: CÁC HÀM XỬ LÝ LOGIC (BACKEND)
+# ==============================================================================
 
-# ---------------------------------------------------------
-# 1. KHU VỰC CHỌN MODEL (Đã chứng minh là chạy được)
-# ---------------------------------------------------------
+def encode_image(image_file):
+    """Chuyển đổi file ảnh sang Base64 và xác định Mime Type"""
+    if image_file is not None:
+        try:
+            # Lấy mime type thực tế (quan trọng để fix lỗi mù ảnh)
+            mime_type = image_file.type
+            
+            # Đọc file và chuyển sang bytes
+            image_instance = Image.open(image_file)
+            img_byte_arr = io.BytesIO()
+            # Lưu lại vào buffer để lấy bytes, giữ nguyên định dạng gốc
+            image_instance.save(img_byte_arr, format=image_instance.format)
+            encoded_string = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+            
+            return {"mime_type": mime_type, "data": encoded_string}
+        except Exception as e:
+            st.error(f"Lỗi xử lý ảnh: {e}")
+            return None
+    return None
+
+def read_text_file(txt_file):
+    """Đọc nội dung file text/code để làm context"""
+    if txt_file is not None:
+        try:
+            stringio = io.StringIO(txt_file.getvalue().decode("utf-8"))
+            return stringio.read()
+        except Exception as e:
+            st.warning(f"Không đọc được file {txt_file.name}: {e}")
+            return ""
+    return ""
+
+def call_gemini_rest_api(api_key, model, prompt, image_data=None, system_instruction=None):
+    """Hàm lõi gọi Google REST API (Không dùng thư viện trung gian)"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+
+    # 1. Xây dựng System Prompt (Nếu có)
+    final_prompt = prompt
+    if system_instruction:
+        final_prompt = f"{system_instruction}\n\n---\nUSER REQUEST:\n{prompt}"
+
+    # 2. Xây dựng Content Parts
+    parts = []
+    
+    # Nếu có ảnh, đưa ảnh vào trước
+    if image_data:
+        parts.append({
+            "inline_data": {
+                "mime_type": image_data['mime_type'],
+                "data": image_data['data']
+            }
+        })
+    
+    # Đưa text vào sau
+    parts.append({"text": final_prompt})
+
+    # 3. Đóng gói Payload
+    payload = {
+        "contents": [{
+            "parts": parts
+        }]
+    }
+
+    # 4. Gửi Request
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        if response.status_code == 200:
+            return {
+                "success": True, 
+                "text": response.json()['candidates'][0]['content']['parts'][0]['text']
+            }
+        else:
+            return {
+                "success": False, 
+                "error_code": response.status_code,
+                "detail": response.text
+            }
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
+# ==============================================================================
+# MODULE 3: SIDEBAR & CẤU HÌNH (CONTROLLER)
+# ==============================================================================
+
 with st.sidebar:
-    st.header("🔑 CẤU HÌNH")
+    st.title("⚙️ TRUNG TÂM ĐIỀU KHIỂN")
+    
+    # 1. Quản lý API Key
+    st.subheader("1. API Key")
     if 'GOOGLE_API_KEY' in st.secrets:
         api_key = st.secrets['GOOGLE_API_KEY']
+        st.success("✅ Đã nạp Key bảo mật từ hệ thống")
     else:
-        api_key = st.text_input("Nhập API Key:", type="password")
+        api_key = st.text_input("Nhập Google API Key:", type="password", help="Lấy tại aistudio.google.com")
 
-    # Tự động lấy danh sách Model
-    available_models = []
-    if api_key:
-        try:
-            url_list = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-            resp = requests.get(url_list)
-            if resp.status_code == 200:
-                data = resp.json()
-                for m in data.get('models', []):
-                    # Chỉ lấy model hỗ trợ generateContent
-                    if "generateContent" in m.get('supportedGenerationMethods', []):
-                        available_models.append(m['name'].replace("models/", ""))
-                st.success(f"✅ Đã kết nối! Tìm thấy {len(available_models)} models.")
-            else:
-                st.error("❌ Key đúng nhưng không lấy được list model.")
-        except:
-            pass
+    st.divider()
 
-    # Dropdown chọn model (Ưu tiên Flash)
-    default_idx = 0
-    if "gemini-1.5-flash" in available_models:
-        default_idx = available_models.index("gemini-1.5-flash")
+    # 2. Chọn Model (Model Hunter Logic)
+    st.subheader("2. Chọn Bộ Não AI")
+    # Danh sách dự phòng nếu không fetch được
+    model_options = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
     
-    selected_model = st.selectbox(
-        "Chọn Model:", 
-        available_models if available_models else ["gemini-1.5-flash"], 
-        index=default_idx
+    # Nút làm mới danh sách
+    if st.button("🔄 Quét Model khả dụng"):
+        if api_key:
+            try:
+                resp = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    fetched_models = []
+                    for m in data.get('models', []):
+                        if "generateContent" in m.get('supportedGenerationMethods', []):
+                            fetched_models.append(m['name'].replace("models/", ""))
+                    # Ưu tiên đưa 2.0 lên đầu
+                    fetched_models.sort(key=lambda x: "2.0" in x, reverse=True)
+                    model_options = fetched_models
+                    st.toast(f"Tìm thấy {len(fetched_models)} models!", icon="🎉")
+            except:
+                st.warning("Không quét được, dùng danh sách mặc định.")
+    
+    selected_model = st.selectbox("Model đang dùng:", model_options)
+
+    st.divider()
+
+    # 3. Chế độ (Personas - Khôi phục tính năng đã mất)
+    st.subheader("3. Chế độ hoạt động")
+    mode = st.radio(
+        "Chọn vai trò:",
+        ["Trợ lý Đa năng", "Chuyên gia Code (Audit)", "Sáng tạo (Marketing)", "Phân tích Dữ liệu"]
     )
-
-# ---------------------------------------------------------
-# 2. XỬ LÝ ẢNH & GỬI (PHẦN QUAN TRỌNG ĐÃ SỬA)
-# ---------------------------------------------------------
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.subheader("Input")
-    prompt_text = st.text_area("Nội dung:", height=150, value="Mô tả chi tiết những gì bạn thấy trong ảnh này.")
-    uploaded_file = st.file_uploader("Tải ảnh:", type=["png", "jpg", "jpeg", "webp"])
     
-    img_blob = None
-    mime_type = "image/jpeg" # Mặc định
+    # Mapping system instruction
+    system_prompts = {
+        "Trợ lý Đa năng": "Bạn là trợ lý AI hữu ích, trả lời ngắn gọn, đi thẳng vào vấn đề.",
+        "Chuyên gia Code (Audit)": "Bạn là Senior Software Engineer. Nhiệm vụ: Review code, tìm bug, giải thích logic, tối ưu hóa và viết docstring. Chỉ dùng Markdown cho code.",
+        "Sáng tạo (Marketing)": "Bạn là Copywriter chuyên nghiệp. Giọng văn: Thu hút, viral, cảm xúc. Dùng emoji hợp lý.",
+        "Phân tích Dữ liệu": "Bạn là Data Analyst. Phân tích dữ liệu/hình ảnh đầu vào, tìm ra insight, xu hướng và trình bày dưới dạng bullet point rõ ràng."
+    }
+    current_instruction = system_prompts[mode]
+
+# ==============================================================================
+# MODULE 4: GIAO DIỆN CHÍNH (VIEW)
+# ==============================================================================
+
+st.title("🧿 TITAN VISION X")
+st.caption(f"Powered by **{selected_model}** | Mode: **{mode}**")
+
+col_left, col_right = st.columns([1, 1])
+
+# --- INPUT AREA ---
+with col_left:
+    st.subheader("📥 Dữ liệu đầu vào")
     
-    if uploaded_file:
-        # 1. Hiển thị ảnh
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Ảnh Input", use_container_width=True)
+    # Tab chọn loại input
+    tab1, tab2 = st.tabs(["💬 Văn bản & Ảnh", "📄 Tệp đính kèm (RAG Lite)"])
+    
+    with tab1:
+        user_text = st.text_area("Nhập câu lệnh/Prompt:", height=150, placeholder="Ví dụ: Giải thích đoạn code này, hoặc Mô tả bức ảnh...")
+        uploaded_img = st.file_uploader("Tải ảnh (Vision):", type=["png", "jpg", "jpeg", "webp", "heic"])
         
-        # 2. Lấy đúng định dạng (Fix lỗi AI không thấy ảnh)
-        mime_type = uploaded_file.type
-        
-        # 3. Chuyển sang bytes
-        img_bytes = io.BytesIO()
-        image.save(img_bytes, format=image.format)
-        img_blob = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
+        # Preview ảnh
+        processed_img_data = None
+        if uploaded_img:
+            st.image(uploaded_img, caption="Ảnh Input", use_container_width=True)
+            processed_img_data = encode_image(uploaded_img)
 
-    btn_run = st.button("🚀 GỬI YÊU CẦU")
+    with tab2:
+        st.info("Tải file code/text để AI đọc hiểu (Tối đa 2MB)")
+        uploaded_txt = st.file_uploader("Chọn file (.txt, .py, .md, .json):", type=["txt", "py", "md", "json", "csv"])
+        file_context = ""
+        if uploaded_txt:
+            file_context = read_text_file(uploaded_txt)
+            with st.expander("Xem nội dung file đã đọc"):
+                st.code(file_context)
 
-with col2:
-    st.subheader("Result")
-    if btn_run:
+    # Nút Action (Đặt ở ngoài tab để luôn bấm được)
+    st.markdown("---")
+    btn_submit = st.button("🚀 KÍCH HOẠT TITAN", use_container_width=True)
+
+# --- OUTPUT AREA ---
+with col_right:
+    st.subheader("💎 Kết quả")
+    
+    if btn_submit:
         if not api_key:
-            st.error("Chưa nhập Key!")
+            st.error("⚠️ CHƯA CÓ CHÌA KHÓA: Vui lòng nhập API Key ở menu bên trái!")
+        elif not user_text and not processed_img_data and not file_context:
+            st.warning("⚠️ Vui lòng nhập nội dung hoặc tải ảnh/file!")
         else:
-            with st.spinner(f"Đang gửi tới {selected_model}..."):
-                # URL chuẩn
-                url_generate = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
-                headers = {'Content-Type': 'application/json'}
+            with st.spinner("⏳ TITAN đang suy nghĩ..."):
+                # Ghép Context từ file vào Prompt
+                full_prompt = user_text
+                if file_context:
+                    full_prompt = f"CONTEXT DATA:\n{file_context}\n\n---\nQUESTION:\n{user_text}"
                 
-                # Payload chuẩn
-                parts = []
+                # Gọi hàm xử lý
+                result = call_gemini_rest_api(
+                    api_key=api_key,
+                    model=selected_model,
+                    prompt=full_prompt,
+                    image_data=processed_img_data,
+                    system_instruction=current_instruction
+                )
                 
-                # Đưa ảnh vào trước (Quan trọng)
-                if img_blob:
-                    parts.append({
-                        "inline_data": {
-                            "mime_type": mime_type, # Dùng đúng loại file (png/jpg)
-                            "data": img_blob
-                        }
-                    })
-                
-                # Đưa text vào sau
-                parts.append({"text": prompt_text})
-                
-                payload = {"contents": [{"parts": parts}]}
-
-                try:
-                    # Gửi Request
-                    response = requests.post(url_generate, headers=headers, data=json.dumps(payload))
+                # Hiển thị kết quả
+                if result["success"]:
+                    st.success("✅ Hoàn tất!")
+                    st.markdown(result["text"])
                     
-                    if response.status_code == 200:
-                        try:
-                            # Parse kết quả
-                            result_text = response.json()['candidates'][0]['content']['parts'][0]['text']
-                            st.success("✅ THÀNH CÔNG!")
-                            st.markdown(result_text)
-                        except:
-                            st.warning("Google trả về OK nhưng cấu trúc lạ. JSON thô:")
-                            st.json(response.json())
-                    else:
-                        st.error(f"❌ Lỗi từ Google ({response.status_code}):")
-                        st.code(response.text)
-                        
-                except Exception as e:
-                    st.error(f"Lỗi kết nối: {str(e)}")
+                    # Nút Copy/Download
+                    st.download_button(
+                        label="💾 Tải kết quả (.md)",
+                        data=result["text"],
+                        file_name="titan_output.md",
+                        mime="text/markdown"
+                    )
+                else:
+                    st.error("🔥 CÓ LỖI XẢY RA!")
+                    st.json(result) # Hiển thị chi tiết lỗi JSON để debug
