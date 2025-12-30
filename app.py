@@ -131,4 +131,14 @@ with col_output:
                 # 2. NẾU 1.5 PRO LỖI -> TỰ ĐỘNG CHUYỂN SANG FLASH (CỨU CÁNH)
                 error_msg = str(e)
                 if "404" in error_msg or "not found" in error_msg:
-                    status_box.warning(f"⚠️ Model Pro
+                    status_box.warning(f"⚠️ Model Pro chưa khả dụng ở vùng này. Đang chuyển sang Flash...")
+                    time.sleep(1)
+                    try:
+                        fallback_model = genai.GenerativeModel("gemini-1.5-flash") # Flash không bao giờ chết
+                        response_bk = fallback_model.generate_content(input_content)
+                        status_box.success("✅ Đã xử lý xong (Backup Mode: Flash)!")
+                        st.markdown(response_bk.text)
+                    except Exception as e2:
+                        st.error(f"❌ Lỗi nghiêm trọng: {e2}")
+                else:
+                    st.error(f"❌ Lỗi hệ thống: {error_msg}")
