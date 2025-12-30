@@ -5,7 +5,7 @@ from PIL import Image
 
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(
-    page_title="TITAN VISION ENGINE v4.0",
+    page_title="TITAN VISION ENGINE v5.0",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -31,34 +31,27 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙ Trung tâm điều khiển")
     
-    # Menu chọn Model (Logic thật)
-     
-    # CẬP NHẬT CORE ENGINE MỚI NHẤT (GEMINI 2.0)
+    # CẤU HÌNH MODEL
     mode_mapping = {
-        # Auto-Router dùng 2.0 Flash Exp (Nhanh và Đa phương thức chuẩn nhất hiện nay)
         "🔴 Auto-Router": "gemini-2.0-flash-exp",
-        
-        # Vision Analysis dùng 2.0 để nhận diện ảnh tốt hơn 1.5 Pro
         "⚪ Vision Analysis": "gemini-2.0-flash-exp",
-        
-        # Code Audit vẫn dùng 2.0 vì context window nó rất lớn
         "⚪ Code Audit": "gemini-2.0-flash-exp"
     }
     
     selected_mode_label = st.radio("Chế độ:", list(mode_mapping.keys()))
-    selected_model_id = mode_mapping[selected_mode_label] # Lấy ID thật của model
+    selected_model_id = mode_mapping[selected_mode_label]
     
     st.markdown("---")
 
     # --- QUẢN LÝ API KEY ---
     api_key = None
     
-    # Kiểm tra secrets.toml trước
+    # 1. Kiểm tra secrets.toml
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
         st.success("🟢 System Online (Secured)")
     else:
-        # Nếu không có file secrets, dùng nhập tay
+        # 2. Kiểm tra Session State
         if "api_key" not in st.session_state:
             st.session_state.api_key = ""
         
@@ -75,7 +68,7 @@ with st.sidebar:
                 st.session_state.api_key = ""
                 st.rerun()
 
-    # KẾT NỐI GEMINI (QUAN TRỌNG)
+    # KẾT NỐI GEMINI
     if api_key:
         os.environ["GOOGLE_API_KEY"] = api_key
         genai.configure(api_key=api_key)
@@ -100,16 +93,12 @@ with col_input:
     user_prompt = st.text_area("Nhập Prompt / Câu hỏi:", height=200, placeholder="Nhập yêu cầu của bạn...")
     uploaded_file = st.file_uploader("Tải ảnh (nếu có):", type=["jpg", "png", "jpeg"])
     
-    # Hiển thị ảnh preview nhỏ nếu có upload
     image_data = None
     if uploaded_file:
         image_data = Image.open(uploaded_file)
         st.image(image_data, caption="Preview", use_column_width=True)
 
     run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
-
-# --- 5. XỬ LÝ LOGIC GỌI AI ---
-# ... (Phần code trên giữ nguyên) ...
 
 # --- 5. XỬ LÝ LOGIC GỌI AI ---
 with col_output:
@@ -122,10 +111,9 @@ with col_output:
             try:
                 with st.spinner("🔄 Đang truy cập dữ liệu thời gian thực..."):
                     # 1. CẤU HÌNH MODEL VỚI SEARCH TOOL
-                    # Thêm tools='google_search_retrieval' để AI tự động tra Google khi cần
                     model = genai.GenerativeModel(
-                        model_name="gemini-2.0-flash-exp",
-                        tools='google_search_retrieval'
+                        model_name=selected_model_id, # Lấy ID động từ Sidebar
+                        tools='google_search_retrieval' # Kích hoạt Search
                     )
                     
                     # 2. Chuẩn bị dữ liệu
@@ -135,29 +123,37 @@ with col_output:
                     if image_data:
                         input_content.append(image_data)
                     
-                    # 3. Gọi Google Gemini
-                    response = model.generate_content(input_content)
-                    
-                    # 4. Hiển thị kết quả
-                    st.success("✅ Đã xử lý xong!")
-                    
-                    # Hiển thị nội dung chính
-                    st.markdown(response.text)
-                    
-                    # --- XỬ LÝ HIỂN THỊ NGUỒN (GROUNDING) ---
-                    # Kiểm tra xem AI có dùng Google Search không để hiển thị nguồn dẫn
-                    if response.candidates[0].grounding_metadata.search_entry_point:
-                        st.markdown("---")
-                        st.caption("🌐 **Nguồn dữ liệu thời gian thực:**")
+                    if not input_content:
+                        st.warning("⚠️ Vui lòng nhập nội dung hoặc tải ảnh!")
+                    else:
+                        # 3. Gọi Google Gemini
+                        response = model.generate_content(input_content)
                         
-                        # Render HTML hiển thị các link nguồn đẹp mắt
-                        grounding_info = response.candidates[0].grounding_metadata
-                        if grounding_info.grounding_chunks:
-                            for chunk in grounding_info.grounding_chunks:
-                                if chunk.web:
-                                    st.markdown(f"- [{chunk.web.title}]({chunk.web.uri})")
+                        # 4. Hiển thị kết quả
+                        st.success("✅ Đã xử lý xong!")
+                        
+                        # Hiển thị nội dung chính
+                        st.markdown(response.text)
+                        
+                        # --- XỬ LÝ HIỂN THỊ NGUỒN (GROUNDING) ---
+                        # Logic hiển thị trích dẫn cực xịn của bác
+                        if response.candidates and response.candidates[0].grounding_metadata:
+                            meta = response.candidates[0].grounding_metadata
+                            if meta.search_entry_point:
+                                st.markdown("---")
+                                st.caption("🌐 **Nguồn dữ liệu tham khảo:**")
+                                
+                                # Render HTML hiển thị link
+                                if meta.grounding_chunks:
+                                    for chunk in meta.grounding_chunks:
+                                        if chunk.web:
+                                            # Hiển thị Title và Link
+                                            st.markdown(f"🔗 [{chunk.web.title}]({chunk.web.uri})")
 
             except Exception as e:
-                st.error(f"❌ Lỗi hệ thống: {str(e)}")
-                # Mẹo debug: Nếu lỗi do model 2.0 chưa ổn định với Search,
-                # hãy thử fallback về 'gemini-1.5-pro' xem có chạy không.
+                # Bắt lỗi Rate Limit (429) hoặc lỗi khác
+                err_msg = str(e)
+                if "429" in err_msg:
+                    st.error("🐢 Server đang quá tải (429). Model 'Experimental' bị giới hạn lượt dùng. Vui lòng chờ 30s!")
+                else:
+                    st.error(f"❌ Lỗi hệ thống: {err_msg}")
