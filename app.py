@@ -1,7 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import time
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title="TITAN VISION v4.0", page_icon="👁️", layout="wide")
@@ -40,48 +39,46 @@ with st.sidebar:
     st.divider()
     
     # --- DEBUG INFO (ĐỂ SOI LỖI) ---
-    with st.expander("🛠️ Debug thông tin Model"):
+    # Phần này cực quan trọng để biết tài khoản bạn có model gì
+    available_models = []
+    with st.expander("🛠️ Debug thông tin Model", expanded=True):
         if api_key:
             try:
                 genai.configure(api_key=api_key)
-                # Lấy danh sách model thực tế mà tài khoản này dùng được
-                models = [m.name for m in genai.list_models()]
-                st.write("Các model khả dụng:", models)
+                # Lấy danh sách model thực tế
+                available_models = [m.name for m in genai.list_models()]
+                st.write("Model tìm thấy:", available_models)
             except Exception as e:
                 st.error(f"Lỗi kết nối: {e}")
         else:
             st.warning("Nhập Key để xem model.")
 
 # --- 3. LOGIC CHỌN MODEL THÔNG MINH ---
-def get_best_model():
-    """Tự động chọn model tốt nhất có sẵn"""
+def get_best_model(models_list):
+    """Chọn model dựa trên danh sách thực tế"""
     try:
-        # Lấy danh sách model từ Google
-        available_models = [m.name for m in genai.list_models()]
-        
         # Ưu tiên Flash (Nhanh, Rẻ, Vision ngon)
-        if 'models/gemini-1.5-flash' in available_models:
+        if 'models/gemini-1.5-flash' in models_list:
             return genai.GenerativeModel('gemini-1.5-flash')
         
         # Nếu không có Flash, tìm Pro Vision (Bản cũ nhưng có mắt)
-        elif 'models/gemini-pro-vision' in available_models:
+        elif 'models/gemini-pro-vision' in models_list:
             return genai.GenerativeModel('gemini-pro-vision')
             
         # Đường cùng thì dùng Gemini Pro (Chỉ text)
-        elif 'models/gemini-pro' in available_models:
+        elif 'models/gemini-pro' in models_list:
             return genai.GenerativeModel('gemini-pro')
             
-        # Nếu vẫn không thấy, thử gọi đại Flash (Cầu may)
+        # Nếu danh sách rỗng hoặc lạ, thử gọi Flash mặc định
         else:
             return genai.GenerativeModel('gemini-1.5-flash')
             
     except Exception as e:
-        # Nếu lỗi quá nặng (ví dụ chưa config key), trả về None
         return None
 
 TITAN_INSTRUCTION = """
 ROLE: Bạn là TITAN v4.0. Nhiệm vụ: Phân tích Input và đưa ra giải pháp "Production-Ready".
-OUTPUT: Markdown format, rõ ràng, sắc bén. Chia làm 3 phần: The Verdict, Deep Dive, Action Plan.
+OUTPUT: Markdown format. Chia làm 3 phần: The Verdict, Deep Dive, Action Plan.
 """
 
 # --- 4. GIAO DIỆN CHÍNH ---
@@ -89,7 +86,7 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("📥 Dữ liệu đầu vào")
-    txt_input = st.text_area("Nhập ý tưởng / Code / Câu hỏi:", height=250, placeholder="Ví dụ: Phân tích bức ảnh này và trích xuất code HTML...")
+    txt_input = st.text_area("Nhập ý tưởng / Code / Câu hỏi:", height=250, placeholder="Ví dụ: Phân tích bức ảnh này...")
     
     uploaded_file = st.file_uploader("Tải ảnh phân tích (JPG/PNG):", type=["jpg", "png", "jpeg"])
     img_data = None
@@ -110,24 +107,23 @@ with col2:
                 try:
                     genai.configure(api_key=api_key)
                     
-                    # Gọi hàm chọn model thông minh
-                    model = get_best_model()
+                    # Gọi hàm chọn model thông minh dựa trên list đã quét
+                    model = get_best_model(available_models)
                     
                     if model is None:
-                        st.error("🔥 Không tìm thấy Model nào khả dụng. Kiểm tra API Key hoặc Debug bên sidebar.")
+                        st.error("🔥 Lỗi khởi tạo Model.")
                     else:
                         # Chuẩn bị Prompt
                         req = [f"MODE: {mode}\nINPUT: {txt_input}"]
                         if img_data:
-                            # Nếu model là gemini-pro (chỉ text) mà có ảnh -> Báo cảnh báo
+                            # Kiểm tra nếu model chỉ hỗ trợ text (gemini-pro thường)
                             if 'gemini-pro' in model.model_name and 'vision' not in model.model_name:
-                                st.warning(f"⚠️ Đang dùng model '{model.model_name}' (không hỗ trợ ảnh). Ảnh sẽ bị bỏ qua.")
+                                st.warning(f"⚠️ Model '{model.model_name}' không đọc được ảnh. Đang chạy chế độ Text.")
                             else:
                                 req.append(img_data)
                                 req[0] += "\n(CÓ ẢNH ĐÍNH KÈM)"
                         
-                        # Set instruction nếu model hỗ trợ
-                        # (Một số model cũ không hỗ trợ system_instruction trong constructor, nên ta kẹp vào prompt)
+                        # Kẹp instruction vào prompt để an toàn cho mọi model
                         req[0] = TITAN_INSTRUCTION + "\n\n" + req[0]
 
                         # Bắn API
@@ -142,4 +138,3 @@ with col2:
                         
                 except Exception as e:
                     st.error(f"🔥 LỖI HỆ THỐNG: {str(e)}")
-                    st.info("💡 Mẹo: Hãy mở mục 'Debug thông tin Model' bên trái để xem chi tiết.")
