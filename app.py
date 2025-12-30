@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import io
+import os
 
 # ==========================================
 # 1. CẤU HÌNH GIAO DIỆN & CSS (CLEAN UI)
@@ -43,11 +43,9 @@ st.markdown("""
 # ==========================================
 # 2. QUẢN LÝ TRẠNG THÁI (SESSION STATE)
 # ==========================================
-# Giúp lưu lại Key và Kết quả khi bấm nút mà không bị reset
-if 'api_key' not in st.session_state:
-    st.session_state['api_key'] = ''
 if 'result' not in st.session_state:
     st.session_state['result'] = ''
+# Lưu ý: Ta không bắt buộc khởi tạo 'api_key' ở đây nữa vì sẽ xử lý động bên dưới
 
 # ==========================================
 # 3. SIDEBAR: TRUNG TÂM ĐIỀU KHIỂN
@@ -55,21 +53,42 @@ if 'result' not in st.session_state:
 with st.sidebar:
     st.title("🌌 TITAN CONTROL")
     
-    # --- KHU VỰC API KEY (Tự động lưu tạm thời) ---
-    with st.expander("🔑 Cấu hình hệ thống", expanded=not st.session_state['api_key']):
-        input_key = st.text_input(
-            "Google API Key", 
-            type="password", 
-            value=st.session_state['api_key'],
-            placeholder="Dán key vào đây...",
-            help="Key sẽ được lưu trong phiên làm việc này."
-        )
-        if input_key:
-            st.session_state['api_key'] = input_key
-            st.success("🟢 System Ready")
-        else:
-            st.warning("🔴 Chưa có Key")
-            st.markdown("[👉 Lấy Key miễn phí tại đây](https://aistudio.google.com/app/apikey)")
+    # --- [NEW] LOGIC XỬ LÝ API KEY THÔNG MINH ---
+    final_api_key = None
+    
+    # Ưu tiên 1: Lấy từ secrets.toml
+    if "GOOGLE_API_KEY" in st.secrets:
+        final_api_key = st.secrets["GOOGLE_API_KEY"]
+        st.success("🟢 System Ready (Key from Secrets)")
+        # Ẩn ô nhập key đi vì đã có key rồi -> Giao diện sạch hơn
+    
+    # Ưu tiên 2: Nếu không có secrets, dùng Session State (Nhập tay)
+    else:
+        if 'api_key_manual' not in st.session_state:
+            st.session_state['api_key_manual'] = ''
+            
+        with st.expander("🔑 Cấu hình Key (Manual)", expanded=not st.session_state['api_key_manual']):
+            input_key = st.text_input(
+                "Google API Key", 
+                type="password", 
+                value=st.session_state['api_key_manual'],
+                placeholder="Dán key vào đây...",
+                help="Nhập key thủ công nếu chưa cấu hình secrets.toml"
+            )
+            if input_key:
+                st.session_state['api_key_manual'] = input_key
+                final_api_key = input_key
+                st.success("🟢 Key Saved Temporary")
+                st.rerun()
+            else:
+                st.warning("🔴 Chưa có Key")
+                st.markdown("[👉 Lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
+                
+        if st.session_state['api_key_manual']:
+            final_api_key = st.session_state['api_key_manual']
+            if st.button("🔄 Reset Key"):
+                st.session_state['api_key_manual'] = ''
+                st.rerun()
 
     st.markdown("---")
 
@@ -88,16 +107,16 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # --- NÚT GẠT DEV MODE (Theo yêu cầu của bạn) ---
-    # Đẩy xuống dưới cùng
-    st.markdown("<br>" * 3, unsafe_allow_html=True) # Tạo khoảng trống
+    # --- NÚT GẠT DEV MODE ---
+    st.markdown("<br>" * 2, unsafe_allow_html=True) 
     dev_mode = st.toggle("🛠️ Dev Mode (Chế độ gỡ lỗi)", value=False)
 
 # ==========================================
 # 4. LOGIC XỬ LÝ (CORE ENGINE)
 # ==========================================
 def call_titan(key, text, img, context, mode):
-    if not key: return "⚠️ Vui lòng nhập API Key ở menu bên trái!"
+    # Double check key tại thời điểm gọi hàm
+    if not key: return "⚠️ Vui lòng cấu hình API Key trước!"
     
     try:
         genai.configure(api_key=key)
@@ -128,7 +147,6 @@ def call_titan(key, text, img, context, mode):
 # ==========================================
 st.title("🌌 TITAN GENESIS ENGINE")
 
-# Hiển thị thông báo chào mừng nếu chưa có kết quả
 if not st.session_state['result']:
     st.caption("🚀 Ready to deploy. Waiting for command...")
 
@@ -141,8 +159,9 @@ with col1:
     
     # Nút kích hoạt
     if st.button("✨ KÍCH HOẠT TITAN", use_container_width=True):
-        if not st.session_state['api_key']:
-            st.error("❌ Chưa nhập API Key!")
+        # Kiểm tra final_api_key (Lấy từ secrets HOẶC nhập tay)
+        if not final_api_key:
+            st.error("❌ Hệ thống chưa nhận diện được API Key!")
         elif not user_text and not user_img:
             st.warning("⚠️ Nhập gì đó đi chứ!")
         else:
@@ -156,16 +175,15 @@ with col1:
                 
                 # Gọi AI
                 img_obj = Image.open(user_img) if user_img else None
-                result = call_titan(st.session_state['api_key'], user_text, img_obj, rag_context, mode)
+                # Truyền final_api_key vào hàm xử lý
+                result = call_titan(final_api_key, user_text, img_obj, rag_context, mode)
                 st.session_state['result'] = result
-                st.rerun() # Load lại để hiện kết quả
+                st.rerun()
 
 with col2:
     st.subheader("📤 Refined Output")
     
-    # Khu vực hiển thị kết quả
     if st.session_state['result']:
-        # Nếu có lỗi, hiện màu đỏ
         if "🔥 LỖI" in st.session_state['result']:
              st.error(st.session_state['result'])
         else:
@@ -178,7 +196,8 @@ with col2:
         st.markdown('<div class="debug-box">', unsafe_allow_html=True)
         st.write("🔧 **DEV MODE: SYSTEM LOGS**")
         st.write(f"- Mode: `{mode}`")
-        st.write(f"- API Key Status: `{'Set' if st.session_state['api_key'] else 'Missing'}`")
+        # Log trạng thái key (Không hiện key thật để bảo mật)
+        st.write(f"- Key Source: `{'SECRETS FILE' if 'GOOGLE_API_KEY' in st.secrets else ('MANUAL INPUT' if final_api_key else 'MISSING')}`")
         st.write(f"- RAG Files Loaded: `{len(rag_files) if rag_files else 0}`")
         if user_img: st.write("- Vision Input: `Detected`")
         st.markdown('</div>', unsafe_allow_html=True)
