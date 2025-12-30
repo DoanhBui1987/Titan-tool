@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import time  # Đã thêm thư viện time để sửa lỗi NameError
+import time
 import google.generativeai as genai
 from PIL import Image
 
@@ -17,8 +17,7 @@ st.markdown("""
 <style>
     .stApp { background-color: #0e1117; }
     .stButton > button { width: 100%; border-radius: 5px; height: 3em; font-weight: bold;}
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    div[data-testid="stExpander"] div[role="button"] p { font-size: 0.9rem; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -26,12 +25,12 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙ Trung tâm điều khiển")
     
-    # CHỌN MODEL: Đã chuyển hết về bản 1.5 Pro (Bản xịn cho người có Key trả phí)
-    # Model này hỗ trợ Search, Code cực mạnh và KHÔNG BỊ GIỚI HẠN
+    # --- CẤU HÌNH MODEL AN TOÀN ---
+    # Sử dụng tên gốc (Alias) để tránh lỗi 404
     mode_mapping = {
-        "🔴 Auto-Router": "gemini-1.5-pro-002", 
-        "⚪ Vision Analysis": "gemini-1.5-pro-002",
-        "⚪ Code Audit": "gemini-1.5-pro-002"
+        "🔴 Auto-Router": "gemini-1.5-pro",  
+        "⚪ Vision Analysis": "gemini-1.5-pro",
+        "⚪ Code Audit": "gemini-1.5-pro"
     }
     
     selected_mode_label = st.radio("Chế độ:", list(mode_mapping.keys()))
@@ -39,7 +38,7 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # API KEY
+    # --- API KEY HANDLING ---
     api_key = None
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
@@ -47,6 +46,7 @@ with st.sidebar:
     else:
         if "api_key" not in st.session_state:
             st.session_state.api_key = ""
+        
         if not st.session_state.api_key:
             user_input = st.text_input("Google API Key:", type="password")
             if user_input:
@@ -62,6 +62,15 @@ with st.sidebar:
     if api_key:
         os.environ["GOOGLE_API_KEY"] = api_key
         genai.configure(api_key=api_key)
+        
+    # --- DEBUG: KIỂM TRA MODEL CÓ SẴN ---
+    with st.expander("🛠 Kiểm tra kết nối", expanded=False):
+        if st.button("Check Models"):
+            try:
+                available_models = [m.name for m in genai.list_models()]
+                st.write(available_models)
+            except Exception as e:
+                st.error(f"Lỗi kết nối: {e}")
 
 # --- 4. GIAO DIỆN CHÍNH ---
 st.title("👁 TITAN VISION ENGINE v4.0")
@@ -81,7 +90,7 @@ with col_input:
 
     run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
 
-# --- 5. XỬ LÝ LOGIC (Đã tối ưu cho Key Trả Phí) ---
+# --- 5. XỬ LÝ LOGIC (CHỐNG LỖI) ---
 with col_output:
     st.subheader("💎 Kết quả phân tích")
     
@@ -89,27 +98,25 @@ with col_output:
         if not api_key:
             st.error("⛔ Chưa có API Key!")
         else:
+            status_box = st.empty()
             try:
-                # Dùng Spinner thay vì code fallback phức tạp vì 1.5 Pro rất khó chết
-                with st.spinner("🚀 Đang xử lý tốc độ cao (Paid Tier)..."):
-                    
-                    # Cấu hình Model 1.5 Pro (Bản ổn định nhất)
+                # 1. THỬ CHẠY MODEL 1.5 PRO
+                with st.spinner("🚀 Đang xử lý (Mode: Pro)..."):
                     model = genai.GenerativeModel(
                         model_name=selected_model_id, 
-                        tools='google_search_retrieval' # Bật tính năng Search
+                        tools='google_search_retrieval'
                     )
                     
                     input_content = []
                     if user_prompt: input_content.append(user_prompt)
                     if image_data: input_content.append(image_data)
                     
-                    # Gọi API
                     response = model.generate_content(input_content)
                     
-                    st.success("✅ Đã xử lý xong!")
+                    status_box.success(f"✅ Xử lý thành công! ({selected_model_id})")
                     st.markdown(response.text)
                     
-                    # Hiển thị nguồn Search (nếu có)
+                    # Hiển thị nguồn Search
                     try:
                         if response.candidates[0].grounding_metadata.search_entry_point:
                             st.markdown("---")
@@ -121,5 +128,7 @@ with col_output:
                         pass
 
             except Exception as e:
-                # Nếu vẫn lỗi thì in ra chi tiết để sửa
-                st.error(f"❌ Lỗi: {str(e)}")
+                # 2. NẾU 1.5 PRO LỖI -> TỰ ĐỘNG CHUYỂN SANG FLASH (CỨU CÁNH)
+                error_msg = str(e)
+                if "404" in error_msg or "not found" in error_msg:
+                    status_box.warning(f"⚠️ Model Pro
