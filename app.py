@@ -1,64 +1,105 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
+import json
+import base64
 from PIL import Image
+import io
 
-# 1. CẤU HÌNH GIAO DIỆN
-st.set_page_config(page_title="TITAN CHECK KEY", page_icon="🔑")
+# CẤU HÌNH
+st.set_page_config(page_title="TITAN REST API", page_icon="⚡")
 
-st.title("🔑 KIỂM TRA API KEY & KẾT NỐI")
+st.markdown("""
+<style>
+    .stButton>button {background: #FF4B4B; color: white; width: 100%;}
+</style>
+""", unsafe_allow_html=True)
 
-# 2. KHU VỰC NHẬP KEY (CÓ BÁO TRẠNG THÁI)
-st.info("Bước 1: Nhập API Key lấy từ aistudio.google.com")
+st.title("⚡ TITAN DIRECT LINK (REST API)")
+st.caption("Bỏ qua thư viện trung gian - Gọi thẳng lên Google Server")
 
-# Lấy key từ secrets hoặc nhập tay
-api_key = st.text_input("Dán API Key vào đây (Bắt đầu bằng AIza...):", type="password")
-
-# --- ĐÂY LÀ PHẦN TRẢ LỜI CÂU HỎI CỦA BẠN ---
-if api_key:
-    st.success("✅ ĐÃ NHẬN KEY! (Hệ thống đã lưu, hãy bấm nút Test bên dưới)")
-    if not api_key.startswith("AIza"):
-        st.warning("⚠️ Cảnh báo: Key này trông lạ lắm (thường phải bắt đầu bằng 'AIza'). Kiểm tra lại nhé.")
-else:
-    st.warning("Waiting... (Chưa nhập Key)")
-
-st.divider()
-
-# 3. NÚT TEST KẾT NỐI RIÊNG BIỆT
-st.info("Bước 2: Bấm nút dưới để xem Key này có dùng được Gemini 1.5 Flash không")
-
-if st.button("🔌 KÍCH HOẠT TEST KẾT NỐI", type="primary"):
-    if not api_key:
-        st.error("Chưa có Key sao mà test được sếp ơi!")
+# 1. NHẬP KEY
+with st.sidebar:
+    st.header("🔑 API KEY")
+    if 'GOOGLE_API_KEY' in st.secrets:
+        api_key = st.secrets['GOOGLE_API_KEY']
+        st.success("Đã nhận Key từ Secrets")
     else:
-        status_box = st.status("Đang kết nối tới Google...", expanded=True)
-        try:
-            # Cấu hình
-            genai.configure(api_key=api_key)
-            status_box.write("📡 Đã cấu hình xong. Đang gọi thử Gemini 1.5 Flash...")
+        api_key = st.text_input("Nhập Key mới tạo:", type="password")
+
+# 2. HÀM GỬI REQUEST TRỰC TIẾP (QUAN TRỌNG NHẤT)
+def call_google_direct(key, prompt, image_data=None):
+    # Endpoint chính thức của Google Gemini 1.5 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+    
+    # Chuẩn bị nội dung gửi (Payload)
+    parts = [{"text": prompt}]
+    
+    # Nếu có ảnh, phải mã hóa sang Base64
+    if image_data:
+        # Convert ảnh sang byte
+        img_byte_arr = io.BytesIO()
+        image_data.save(img_byte_arr, format=image_data.format)
+        img_bytes = img_byte_arr.getvalue()
+        
+        # Mã hóa base64
+        b64_string = base64.b64encode(img_bytes).decode('utf-8')
+        
+        # Thêm vào gói tin
+        img_payload = {
+            "inline_data": {
+                "mime_type": "image/jpeg", # Giả định ảnh là jpeg/png
+                "data": b64_string
+            }
+        }
+        parts.insert(0, img_payload) # Đưa ảnh lên trước text
+
+    payload = {
+        "contents": [{
+            "parts": parts
+        }]
+    }
+
+    # Gửi đi bằng requests (Bỏ qua thư viện google-generativeai)
+    headers = {'Content-Type': 'application/json'}
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        # Kiểm tra kết quả
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"❌ LỖI TỪ SERVER GOOGLE ({response.status_code}):\n{response.text}"
             
-            # Gọi thử model
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content("Chào Titan, bạn có khỏe không?")
-            
-            status_box.update(label="✅ KẾT NỐI THÀNH CÔNG!", state="complete", expanded=True)
-            st.balloons()
-            st.success("Tuyệt vời! Key này xịn. Model trả lời: ")
-            st.write(f"🤖 AI: {response.text}")
-            
-        except Exception as e:
-            status_box.update(label="❌ KẾT NỐI THẤT BẠI", state="error", expanded=True)
-            st.error(f"Lỗi chi tiết: {str(e)}")
-            
-            # Phân tích lỗi giúp bạn
-            err_msg = str(e)
-            if "404" in err_msg:
-                st.markdown("""
-                ### 🛑 LỖI 404: KHÔNG TÌM THẤY MODEL
-                **Nguyên nhân:** Key này của bạn là Key cũ hoặc Key của dự án Google Cloud chưa bật quyền.
-                **Cách sửa:** 1. Vào [Google AI Studio](https://aistudio.google.com/app/apikey)
-                2. Tạo Key mới trong **New Project**.
-                """)
-            elif "429" in err_msg:
-                st.error("Lỗi 429: Hết tiền/Hết lượt dùng (Quota Exceeded). Đổi Key khác.")
-            elif "400" in err_msg:
-                st.error("Lỗi 400: Key sai hoàn toàn. Copy thiếu chữ cái nào không?")
+    except Exception as e:
+        return f"🔥 LỖI KẾT NỐI MẠNG: {str(e)}"
+
+# 3. GIAO DIỆN
+col1, col2 = st.columns(2)
+
+with col1:
+    txt_input = st.text_area("Nội dung:", height=150, value="Mô tả bức ảnh này")
+    file = st.file_uploader("Upload ảnh:", type=["jpg", "png", "jpeg"])
+    
+    img = None
+    if file:
+        img = Image.open(file)
+        st.image(img, caption="Ảnh Input", use_container_width=True)
+    
+    btn = st.button("🚀 GỬI TRỰC TIẾP")
+
+with col2:
+    if btn:
+        if not api_key:
+            st.error("Chưa nhập Key!")
+        else:
+            with st.spinner("Đang gọi điện thẳng cho Google..."):
+                result = call_google_direct(api_key, txt_input, img)
+                
+                if "❌" in result or "🔥" in result:
+                    st.error(result)
+                    st.markdown("---")
+                    st.warning("**NẾU VẪN LỖI:**\nCó nghĩa là Key này (hoặc tài khoản Gmail này) đã bị Google chặn IP của Streamlit. Bạn hãy thử chạy code này trên máy tính cá nhân (Localhost) thay vì trên web.")
+                else:
+                    st.success("✅ THÀNH CÔNG RỰC RỠ!")
+                    st.markdown(result)
