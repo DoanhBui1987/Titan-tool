@@ -1,70 +1,100 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import os
 
-# 1. CẤU HÌNH TRANG
-st.set_page_config(page_title="TITAN FINAL BOSS", page_icon="🔥", layout="wide")
+# ==========================================
+# 1. CẤU HÌNH GIAO DIỆN
+# ==========================================
+st.set_page_config(
+    page_title="TITAN VISION ENGINE v5.3",
+    page_icon="👁️",
+    layout="wide"
+)
 
-# 2. CSS FIX GIAO DIỆN
+# CSS làm đẹp
 st.markdown("""
 <style>
-    .stButton>button {width: 100%; background: #FF4B4B; color: white;}
+    .stButton>button {
+        background: linear-gradient(90deg, #FF4B4B 0%, #FF9068 100%);
+        color: white;
+        border: none;
+        height: 3em;
+        font-weight: bold;
+    }
+    .stTextArea textarea {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# 3. SIDEBAR & API KEY
+# ==========================================
+# 2. THANH CÀI ĐẶT (SIDEBAR)
+# ==========================================
 with st.sidebar:
-    st.title("🔑 CẤU HÌNH")
-    # Ưu tiên lấy từ Secrets, không có thì nhập tay
+    st.title("⚙️ CẤU HÌNH")
+    
+    # Ưu tiên lấy Key từ Secrets của Streamlit Cloud, nếu không có thì nhập tay
     if 'GOOGLE_API_KEY' in st.secrets:
         api_key = st.secrets['GOOGLE_API_KEY']
-        st.success("✅ Đã nạp Key từ hệ thống")
+        st.success("✅ Đã kết nối API Key hệ thống")
     else:
-        api_key = st.text_input("Dán API Key vào đây:", type="password")
-    
-    st.info("Phiên bản v6.0: Đã fix lỗi Library cũ.")
+        api_key = st.text_input("🔑 Google API Key", type="password")
+        st.caption("Nếu chưa có, [lấy Key tại đây](https://aistudio.google.com/app/apikey)")
 
-# 4. HÀM GỌI GEMINI (Đơn giản hóa tối đa)
-def ask_gemini(key, prompt, image):
+    st.divider()
+    mode = st.selectbox(
+        "Chế độ:",
+        ["Phân tích Hình ảnh", "Review Code", "Viết Content", "Chat Tự do"]
+    )
+
+# ==========================================
+# 3. HÀM XỬ LÝ (LOGIC)
+# ==========================================
+def call_gemini(key, text, img, mode):
     try:
         genai.configure(api_key=key)
-        # Dùng model chuẩn nhất hiện nay
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        content = [prompt]
-        if image:
-            content.append(image)
+        prompt_parts = [f"CHẾ ĐỘ: {mode}\n\nYÊU CẦU: {text}"]
+        if img:
+            prompt_parts.append(img)
+            prompt_parts[0] = f"[XỬ LÝ ẢNH - CHẾ ĐỘ {mode}]\n" + prompt_parts[0]
             
-        response = model.generate_content(content)
+        response = model.generate_content(prompt_parts)
         return response.text
     except Exception as e:
-        return f"❌ LỖI: {str(e)}\n\n(Nếu lỗi 404: Hãy kiểm tra lại file requirements.txt)"
+        return f"🔥 LỖI: {str(e)}"
 
-# 5. GIAO DIỆN CHÍNH
-st.title("🔥 TITAN VISION: FINAL BOSS")
+# ==========================================
+# 4. GIAO DIỆN CHÍNH
+# ==========================================
+st.title("👁️ TITAN VISION ENGINE v5.3")
+st.caption("Phiên bản chuẩn cho Streamlit Cloud")
 
-col1, col2 = st.columns(2)
+col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("Input")
-    txt = st.text_area("Nhập câu hỏi:", height=150)
-    img_file = st.file_uploader("Chọn ảnh", type=['png', 'jpg', 'jpeg'])
+    st.subheader("📥 Input")
+    user_input = st.text_area("Nội dung / Câu hỏi:", height=200)
+    uploaded_file = st.file_uploader("Tải ảnh (nếu cần)", type=["jpg", "png", "jpeg", "webp"])
     
-    img = None
-    if img_file:
-        img = Image.open(img_file)
-        st.image(img, caption="Ảnh preview", use_container_width=True) # Streamlit mới dùng use_container_width
-        
-    btn = st.button("🚀 CHẠY NGAY")
+    image_data = None
+    if uploaded_file:
+        image_data = Image.open(uploaded_file)
+        st.image(image_data, caption="Ảnh Preview", use_container_width=True)
+
+    btn_run = st.button("✨ KÍCH HOẠT TITAN", type="primary", use_container_width=True)
 
 with col2:
-    st.subheader("Output")
-    if btn:
+    st.subheader("💎 Kết quả")
+    
+    if btn_run:
         if not api_key:
-            st.error("⚠️ Thiếu API Key!")
+            st.error("⚠️ Chưa nhập API Key!")
+        elif not user_input and not image_data:
+            st.warning("⚠️ Nhập nội dung hoặc ảnh để bắt đầu.")
         else:
-            with st.spinner("Đang xử lý..."):
-                res = ask_gemini(api_key, txt, img)
-                st.success("Xong!")
-                st.markdown(res)
+            with st.spinner("📡 TITAN đang xử lý..."):
+                result = call_gemini(api_key, user_input, image_data, mode)
+                st.markdown(result)
