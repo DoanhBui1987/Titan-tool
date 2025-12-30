@@ -148,4 +148,4 @@ except:
 print("--------------------------------------------------")
 
 # Chạy ngầm
-!streamlit run app.py &>/content
+!streamlit run app.py &>/content/logs.txt & npx localtunnel --port 8501
