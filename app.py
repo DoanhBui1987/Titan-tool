@@ -109,35 +109,55 @@ with col_input:
     run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
 
 # --- 5. XỬ LÝ LOGIC GỌI AI ---
+# ... (Phần code trên giữ nguyên) ...
+
+# --- 5. XỬ LÝ LOGIC GỌI AI ---
 with col_output:
     st.subheader("💎 Kết quả phân tích")
     
     if run_btn:
         if not api_key:
             st.error("⛔ Chưa có API Key!")
-        elif not user_prompt and not uploaded_file:
-            st.warning("⚠️ Hãy nhập nội dung để xử lý.")
         else:
             try:
-                with st.spinner("Đang kết nối Neural Network..."):
-                    # 1. Khởi tạo Model thật
-                    model = genai.GenerativeModel(selected_model_id)
+                with st.spinner("🔄 Đang truy cập dữ liệu thời gian thực..."):
+                    # 1. CẤU HÌNH MODEL VỚI SEARCH TOOL
+                    # Thêm tools='google_search_retrieval' để AI tự động tra Google khi cần
+                    model = genai.GenerativeModel(
+                        model_name="gemini-2.0-flash-exp",
+                        tools='google_search_retrieval'
+                    )
                     
-                    # 2. Chuẩn bị dữ liệu gửi đi
+                    # 2. Chuẩn bị dữ liệu
                     input_content = []
                     if user_prompt:
                         input_content.append(user_prompt)
                     if image_data:
                         input_content.append(image_data)
                     
-                    # 3. Gọi Google Gemini (Xử lý thật)
+                    # 3. Gọi Google Gemini
                     response = model.generate_content(input_content)
                     
-                    # 4. Hiển thị kết quả thật
+                    # 4. Hiển thị kết quả
                     st.success("✅ Đã xử lý xong!")
+                    
+                    # Hiển thị nội dung chính
                     st.markdown(response.text)
                     
+                    # --- XỬ LÝ HIỂN THỊ NGUỒN (GROUNDING) ---
+                    # Kiểm tra xem AI có dùng Google Search không để hiển thị nguồn dẫn
+                    if response.candidates[0].grounding_metadata.search_entry_point:
+                        st.markdown("---")
+                        st.caption("🌐 **Nguồn dữ liệu thời gian thực:**")
+                        
+                        # Render HTML hiển thị các link nguồn đẹp mắt
+                        grounding_info = response.candidates[0].grounding_metadata
+                        if grounding_info.grounding_chunks:
+                            for chunk in grounding_info.grounding_chunks:
+                                if chunk.web:
+                                    st.markdown(f"- [{chunk.web.title}]({chunk.web.uri})")
+
             except Exception as e:
                 st.error(f"❌ Lỗi hệ thống: {str(e)}")
-    else:
-        st.info("👋 Waiting for command...")
+                # Mẹo debug: Nếu lỗi do model 2.0 chưa ổn định với Search,
+                # hãy thử fallback về 'gemini-1.5-pro' xem có chạy không.
