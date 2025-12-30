@@ -101,6 +101,9 @@ with col_input:
     run_btn = st.button("🚀 KÍCH HOẠT TITAN", type="primary")
 
 # --- 5. XỬ LÝ LOGIC GỌI AI ---
+# ... (Phần trên giữ nguyên) ...
+
+# --- 5. XỬ LÝ LOGIC GỌI AI (SMART FALLBACK VERSION) ---
 with col_output:
     st.subheader("💎 Kết quả phân tích")
     
@@ -108,52 +111,63 @@ with col_output:
         if not api_key:
             st.error("⛔ Chưa có API Key!")
         else:
+            # Tạo placeholder để hiển thị trạng thái xử lý
+            status_box = st.empty()
+            
             try:
-                with st.spinner("🔄 Đang truy cập dữ liệu thời gian thực..."):
-                    # 1. CẤU HÌNH MODEL VỚI SEARCH TOOL
-                    model = genai.GenerativeModel(
-                        model_name=selected_model_id, # Lấy ID động từ Sidebar
-                        tools='google_search_retrieval' # Kích hoạt Search
-                    )
-                    
-                    # 2. Chuẩn bị dữ liệu
-                    input_content = []
-                    if user_prompt:
-                        input_content.append(user_prompt)
-                    if image_data:
-                        input_content.append(image_data)
-                    
-                    if not input_content:
-                        st.warning("⚠️ Vui lòng nhập nội dung hoặc tải ảnh!")
-                    else:
-                        # 3. Gọi Google Gemini
-                        response = model.generate_content(input_content)
-                        
-                        # 4. Hiển thị kết quả
-                        st.success("✅ Đã xử lý xong!")
-                        
-                        # Hiển thị nội dung chính
-                        st.markdown(response.text)
-                        
-                        # --- XỬ LÝ HIỂN THỊ NGUỒN (GROUNDING) ---
-                        # Logic hiển thị trích dẫn cực xịn của bác
-                        if response.candidates and response.candidates[0].grounding_metadata:
-                            meta = response.candidates[0].grounding_metadata
-                            if meta.search_entry_point:
-                                st.markdown("---")
-                                st.caption("🌐 **Nguồn dữ liệu tham khảo:**")
-                                
-                                # Render HTML hiển thị link
-                                if meta.grounding_chunks:
-                                    for chunk in meta.grounding_chunks:
-                                        if chunk.web:
-                                            # Hiển thị Title và Link
-                                            st.markdown(f"🔗 [{chunk.web.title}]({chunk.web.uri})")
+                # BƯỚC 1: THỬ CHẠY MODEL MẠNH NHẤT (GEMINI 2.0)
+                status_box.info("⚡ Đang kích hoạt Gemini 2.0 Flash Exp...")
+                
+                # Cấu hình model chính
+                model = genai.GenerativeModel(
+                    model_name="gemini-2.0-flash-exp",
+                    tools='google_search_retrieval' # Vẫn giữ tính năng Search
+                )
+                
+                # Chuẩn bị dữ liệu
+                input_content = []
+                if user_prompt: input_content.append(user_prompt)
+                if image_data: input_content.append(image_data)
+                
+                # Gọi API
+                response = model.generate_content(input_content)
+                
+                # Nếu thành công:
+                status_box.success("✅ Đã xử lý xong bằng Gemini 2.0!")
+                st.markdown(response.text)
+                
+                # Hiển thị nguồn (nếu có)
+                if response.candidates[0].grounding_metadata.search_entry_point:
+                    st.markdown("---")
+                    st.caption("🌐 Nguồn dữ liệu thời gian thực (Gemini 2.0)")
+                    grounding_info = response.candidates[0].grounding_metadata
+                    if grounding_info.grounding_chunks:
+                        for chunk in grounding_info.grounding_chunks:
+                            if chunk.web:
+                                st.markdown(f"- [{chunk.web.title}]({chunk.web.uri})")
 
             except Exception as e:
-                # Bắt lỗi Rate Limit (429) hoặc lỗi khác
-                err_msg = str(e)
-                if "429" in err_msg:
-                    st.error("🐢 Server đang quá tải (429). Model 'Experimental' bị giới hạn lượt dùng. Vui lòng chờ 30s!")
+                # BƯỚC 2: NẾU GEMINI 2.0 BỊ LỖI (429) -> CHUYỂN VỀ 1.5 FLASH
+                error_msg = str(e)
+                if "429" in error_msg or "ResourceExhausted" in error_msg:
+                    status_box.warning("🐢 Gemini 2.0 đang quá tải. Hệ thống tự động chuyển sang Gemini 1.5 Flash...")
+                    time.sleep(1) # Nghỉ 1 nhịp
+                    
+                    try:
+                        # Gọi Model dự phòng (Backup Model)
+                        backup_model = genai.GenerativeModel("gemini-1.5-flash")
+                        
+                        # Lưu ý: 1.5 Flash không hỗ trợ Search tool mạnh như 2.0 nên ta bỏ tham số tools
+                        response_backup = backup_model.generate_content(input_content)
+                        
+                        status_box.success("✅ Đã xử lý xong bằng Gemini 1.5 Flash (Backup Mode)!")
+                        st.markdown(response_backup.text)
+                        
+                    except Exception as e2:
+                        status_box.error(f"❌ Cả 2 hệ thống đều bận. Vui lòng thử lại sau 30s. Lỗi: {str(e2)}")
                 else:
-                    st.error(f"❌ Lỗi hệ thống: {err_msg}")
+                    # Nếu là lỗi khác (như sai Key, lỗi mạng...)
+                    status_box.error(f"❌ Lỗi hệ thống: {error_msg}")
+
+    else:
+        st.info("👋 Waiting for command...")
