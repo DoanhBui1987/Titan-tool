@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import google.generativeai as genai
 from PIL import Image
+import time
 
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(
