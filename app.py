@@ -1,67 +1,70 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import os
 
 # 1. CẤU HÌNH TRANG
-st.set_page_config(page_title="TITAN FINAL", page_icon="🔥")
+st.set_page_config(page_title="TITAN FINAL BOSS", page_icon="🔥", layout="wide")
 
-# 2. XỬ LÝ API KEY
+# 2. CSS FIX GIAO DIỆN
+st.markdown("""
+<style>
+    .stButton>button {width: 100%; background: #FF4B4B; color: white;}
+</style>
+""", unsafe_allow_html=True)
+
+# 3. SIDEBAR & API KEY
 with st.sidebar:
-    st.header("🔑 CHÌA KHÓA")
-    # Tự động lấy từ Secrets hoặc nhập tay
+    st.title("🔑 CẤU HÌNH")
+    # Ưu tiên lấy từ Secrets, không có thì nhập tay
     if 'GOOGLE_API_KEY' in st.secrets:
         api_key = st.secrets['GOOGLE_API_KEY']
-        st.success("✅ Đã nhận Key hệ thống")
+        st.success("✅ Đã nạp Key từ hệ thống")
     else:
         api_key = st.text_input("Dán API Key vào đây:", type="password")
-
-# 3. HÀM GỌI GEMINI (Cơ chế chống lỗi 404)
-def call_titan(key, prompt, img_data):
-    genai.configure(api_key=key)
     
-    # DANH SÁCH MODEL ĐỂ THỬ (Nếu cái đầu lỗi, thử cái sau)
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro-vision']
+    st.info("Phiên bản v6.0: Đã fix lỗi Library cũ.")
+
+# 4. HÀM GỌI GEMINI (Đơn giản hóa tối đa)
+def ask_gemini(key, prompt, image):
+    try:
+        genai.configure(api_key=key)
+        # Dùng model chuẩn nhất hiện nay
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        content = [prompt]
+        if image:
+            content.append(image)
+            
+        response = model.generate_content(content)
+        return response.text
+    except Exception as e:
+        return f"❌ LỖI: {str(e)}\n\n(Nếu lỗi 404: Hãy kiểm tra lại file requirements.txt)"
+
+# 5. GIAO DIỆN CHÍNH
+st.title("🔥 TITAN VISION: FINAL BOSS")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Input")
+    txt = st.text_area("Nhập câu hỏi:", height=150)
+    img_file = st.file_uploader("Chọn ảnh", type=['png', 'jpg', 'jpeg'])
     
-    last_error = ""
-    
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            
-            # Chuẩn bị dữ liệu
-            content = [prompt]
-            if img_data:
-                content.append(img_data)
-                
-            # Gọi API
-            response = model.generate_content(content)
-            return f"**✅ Kết quả từ {model_name}:**\n\n" + response.text
-            
-        except Exception as e:
-            last_error = str(e)
-            continue # Thử model tiếp theo
-            
-    return f"❌ TẤT CẢ MODEL ĐỀU THẤT BẠI. Lỗi cuối cùng: {last_error}"
+    img = None
+    if img_file:
+        img = Image.open(img_file)
+        st.image(img, caption="Ảnh preview", use_container_width=True) # Streamlit mới dùng use_container_width
+        
+    btn = st.button("🚀 CHẠY NGAY")
 
-# 4. GIAO DIỆN CHÍNH
-st.title("🔥 TITAN VISION: THE FINAL STAND")
-st.info("Phiên bản tự động dò tìm Model phù hợp.")
-
-input_text = st.text_area("Nhập câu hỏi:", height=100, placeholder="Ví dụ: Mô tả bức ảnh này...")
-uploaded_file = st.file_uploader("Chọn ảnh:", type=["jpg", "png", "jpeg"])
-
-if uploaded_file:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Ảnh đã chọn", width=300)
-else:
-    image = None
-
-if st.button("🚀 CHẠY NGAY ĐI", type="primary"):
-    if not api_key:
-        st.error("⚠️ Chưa có API Key sếp ơi!")
-    elif not input_text and not image:
-        st.warning("⚠️ Nhập gì đó đi chứ!")
-    else:
-        with st.spinner("Đang triệu hồi AI... (Chờ xíu)"):
-            result = call_titan(api_key, input_text, image)
-            st.markdown(result)
+with col2:
+    st.subheader("Output")
+    if btn:
+        if not api_key:
+            st.error("⚠️ Thiếu API Key!")
+        else:
+            with st.spinner("Đang xử lý..."):
+                res = ask_gemini(api_key, txt, img)
+                st.success("Xong!")
+                st.markdown(res)
