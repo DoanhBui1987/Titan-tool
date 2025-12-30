@@ -32,10 +32,17 @@ with st.sidebar:
     st.header("⚙ Trung tâm điều khiển")
     
     # Menu chọn Model (Logic thật)
+     
+    # CẬP NHẬT CORE ENGINE MỚI NHẤT (GEMINI 2.0)
     mode_mapping = {
-        "🔴 Auto-Router": "gemini-1.5-flash",     # Nhanh, rẻ
-        "⚪ Vision Analysis": "gemini-1.5-pro",   # Thông minh nhất cho ảnh
-        "⚪ Code Audit": "gemini-1.5-flash"       # Tối ưu cho code
+        # Auto-Router dùng 2.0 Flash Exp (Nhanh và Đa phương thức chuẩn nhất hiện nay)
+        "🔴 Auto-Router": "gemini-2.0-flash-exp",
+        
+        # Vision Analysis dùng 2.0 để nhận diện ảnh tốt hơn 1.5 Pro
+        "⚪ Vision Analysis": "gemini-2.0-flash-exp",
+        
+        # Code Audit vẫn dùng 2.0 vì context window nó rất lớn
+        "⚪ Code Audit": "gemini-2.0-flash-exp"
     }
     
     selected_mode_label = st.radio("Chế độ:", list(mode_mapping.keys()))
